@@ -8,10 +8,13 @@ import imagehash
 
 class MtgScan:
 
-    def __init__(self, cam_num) -> None:
+    def __init__(self, set_code, cam_num=0, threshold=10, debug=False) -> None:
         self.cap = cv2.VideoCapture(cam_num)
         self.sorted_contours = []
         self.frame = None
+        self.threshold = threshold
+        self.set_code = set_code
+        self.debug = debug
 
     def run(self):
         while True:
@@ -33,14 +36,14 @@ class MtgScan:
                 cv2.drawContours(self.frame, [card_contour], -1, (0, 255, 0), 2)
                 cv2.imshow("card?", card_image)
 
+            # Render Frame
+            self.render()
+
             if cv2.waitKey(1) == ord('c') and card_image is not None:
-                self.identify_card(card_image, maxWidth, maxHeight)
+                self.identify_card(self.set_code, card_image, maxWidth, maxHeight, self.threshold)
 
             if cv2.waitKey(1) == ord('q'):
                 break
-
-            # Render Frame
-            self.render()
 
         self.cap.release()
         cv2.destroyAllWindows()
@@ -53,6 +56,8 @@ class MtgScan:
             cv2.drawContours(self.frame, [contour], -1, (0, 255, 0), 2)
 
     def find_card_contour(self):
+        if self.sorted_contours is None:
+            return
         for _, contour in self.sorted_contours:
             dst, max_height, max_width, rect = self.warp_contour(contour)
 
@@ -61,6 +66,8 @@ class MtgScan:
 
             ratio = max_height / max_width
             if (ratio >= 0.730 or ratio <= 0.739) and dst[2][0] < 1200 and dst[2][1] < 1200:
+                if self.debug:
+                    print(ratio)
                 M = cv2.getPerspectiveTransform(rect, dst)
                 return contour, cv2.warpPerspective(self.frame, M, (max_width, max_height)), max_width, max_height
 
@@ -115,12 +122,13 @@ class MtgScan:
         return sorted([(cv2.contourArea(i), i) for i in contours], key=lambda a: a[0], reverse=True)
 
     @staticmethod
-    def identify_card(card, max_width, max_height):
+    def identify_card(set_code, card, max_width, max_height, threshold=10):
         # hash our warped image
         hash = imagehash.average_hash(Image.fromarray(card))
 
+        images = []
         # loop over all official images
-        for orig in glob('images/*.jpeg'):
+        for orig in glob('images/{}/*.jpg'.format(set_code)):
             # grayscale, resize, and blur original image
             orig_image = Image.open(orig).convert('LA')
             orig_image.resize((max_width, max_height))
@@ -129,8 +137,13 @@ class MtgScan:
             # hash original and get hash
             orig_hash = imagehash.average_hash(orig_image)
             score = hash - orig_hash
-
-            print('Comparing image to {}, score {}'.format(
-                orig, score
-            ))
+            if score <= threshold:
+                images.append({'file': orig, 'score': score})
+                print('Comparing image to {}, score {}'.format(
+                    orig, score
+                ))
         print('-' * 50)
+        if len(images) > 0:
+            best_match = sorted(images, key=lambda k: k['score'])[0]
+            print('Best match is file: {} with score of: {}'.format(best_match['file'], best_match['score']))
+            print('-' * 50)
