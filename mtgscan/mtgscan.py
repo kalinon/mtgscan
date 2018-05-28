@@ -113,9 +113,6 @@ class MtgScan:
         points = np.int0(points)
         return points
 
-        # for point in points:
-        #     cv2.circle(self.frame, tuple(point), 10, (0, 255, 0), -1)
-
     @staticmethod
     def find_contours(thresh):
         _, contours, _ = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
